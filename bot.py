@@ -8,7 +8,7 @@ import sys
 # --- Configuration ---
 URL = "https://docs.google.com/forms/u/0/d/e/1FAIpQLSfeLPNWwoaPjqLIImZ-te6dP8b4zOlslGrJsd4bicmw49klkQ/formResponse"
 CSV_FILENAME = "sleep_data_1000.csv"
-NUM_RECORDS = 1000
+NUM_RECORDS = 700
 # Set to 30 seconds for a good balance between safety and avoiding GitHub's 6-hour job timeout.
 SUBMISSION_DELAY_SECONDS = 30 
 
