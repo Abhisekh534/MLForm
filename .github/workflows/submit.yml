@@ -5,33 +5,38 @@ on:
   workflow_dispatch:
     inputs:
       start_row:
-        description: 'Start submission from this row number (0-indexed). E.g., if it failed after 500, enter 500.'
+        description: 'Start submission from this row number (0-indexed). USE THE LAST LOGGED NUMBER. Default is 0.'
         required: false
         default: '0'
 
 jobs:
   submit_form_data:
-    # Use the default Linux runner
+    # Uses the standard Ubuntu runner
     runs-on: ubuntu-latest
+
+    # Set a maximum time limit for the job. 
+    # This prevents the job from running indefinitely if there's an unexpected issue, 
+    # but the 6-hour GitHub default will still be the effective limit for your submission rate.
+    timeout-minutes: 360 # 6 hours
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Set up Python
+    - name: Set up Python Environment
       uses: actions/setup-python@v5
       with:
         python-version: '3.x'
 
-    - name: Install dependencies
-      # Install the required libraries (requests and pandas)
+    - name: Install Dependencies (requests, pandas)
       run: |
         python -m pip install --upgrade pip
         pip install requests pandas
 
     - name: Run Submission Bot
       # The bot.py script handles both CSV generation (if needed) and submission.
-      # We pass the user-provided start_row as the first command line argument to bot.py
+      # It will generate the 5000-row CSV only if it does not already exist.
+      # We pass the user-provided start_row as the command line argument.
       run: |
-        echo "Starting submission with bot.py from row ${{ github.event.inputs.start_row }}"
+        echo "Starting bot.py submission from row ${{ github.event.inputs.start_row }}"
         python bot.py ${{ github.event.inputs.start_row }}
