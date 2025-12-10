@@ -1,81 +1,141 @@
-import requests
-import random
 import time
-from datetime import datetime
+import random
+import requests
+import pandas as pd
+import os
+import sys
 
-# -------------------- SEED --------------------
-random.seed(time.time() + random.randint(0, 1000))
+# --- Configuration ---
+URL = "https://docs.google.com/forms/u/0/d/e/1FAIpQLSfeLPNWwoaPjqLIImZ-te6dP8b4zOlslGrJsd4bicmw49klkQ/formResponse"
+CSV_FILENAME = "sleep_data_1000.csv"
+NUM_RECORDS = 1000
+# Set to 30 seconds for a good balance between safety and avoiding GitHub's 6-hour job timeout.
+SUBMISSION_DELAY_SECONDS = 30 
 
-# -------------------- CONFIG --------------------
-url = "https://docs.google.com/forms/d/e/1FAIpQLSfeLPNWwoaPjqLIImZ-te6dP8b4zOlslGrJsd4bicmw49klkQ/formResponse"
-
-def weighted_choice(options, weights):
-    return random.choices(options, weights=weights)[0]
-
-# -------------------- HUMAN-LIKE RESPONSE --------------------
-outlier = random.random() < 0.04  # 4% chance for unusual behavior
-
-sleep_hours = random.randint(0,12) if outlier else weighted_choice([1,2,3,4,5,6,7,8], [5,10,15,20,25,15,7,3])
-sleep_hours += random.choice([-1,0,1])
-sleep_hours = max(0, min(12, sleep_hours))
-
-if sleep_hours <= 2:
-    sleep_quality = 5 if outlier else random.randint(1,3)
-elif sleep_hours <= 4:
-    sleep_quality = random.randint(2,4)
-elif sleep_hours <= 6:
-    sleep_quality = random.randint(3,5)
-else:
-    sleep_quality = random.randint(4,5)
-
-screen_hours = random.randint(0,10) if outlier else weighted_choice([1,2,3,4,5,6], [10,15,25,20,20,10])
-screen_hours += random.choice([-1,0,1])
-screen_hours = max(0, min(10, screen_hours))
-
-if outlier:
-    productive_hours = random.randint(1,5)
-else:
-    if screen_hours <= 2:
-        productive_hours = random.randint(3,5)
-    elif screen_hours <= 4:
-        productive_hours = random.randint(2,4)
-    else:
-        productive_hours = random.randint(1,3)
-
-exercise = random.randint(1,5) if outlier else weighted_choice([1,2,3,4,5], [5,10,20,35,30])
-study_hours = random.randint(0,10) if outlier else weighted_choice([1,2,3,4,5,6], [10,20,30,25,10,5])
-study_hours += random.choice([-1,0,1])
-study_hours = max(0, study_hours)
-
-social_activity = weighted_choice(["Sometimes","Always","Never"], [45,35,20])
-time_for_self = weighted_choice(["5-10 minutes","10-20 minutes","20-30 minutes"], [35,40,25])
-schedule_change = weighted_choice(["No, Same schedule","Yes, Changed schedule"], [75,25])
-stress_level = weighted_choice([1,2,3,4,5], [15,20,30,25,10])
-meals = weighted_choice([1,2,3,4,5], [15,25,30,20,10])
-relaxation_hours = weighted_choice([1,2,3,4,5], [20,25,30,15,10])
-screen_quality = weighted_choice(["1-2 hours","3-4 hours","More than 4 hours"], [30,40,30])
-days_unproductive = weighted_choice(["1-2 days","3-5 days","5+ days"], [35,40,25])
-
-# -------------------- FORM DATA --------------------
-data = {
-    "entry.130782805": f"{study_hours} ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})",
-    "entry.1315476675": screen_hours,
-    "entry.882704943": sleep_hours,
-    "entry.1934504077": sleep_quality,
-    "entry.206918368": weighted_choice(["8 PM - 10 PM","10 PM - 12 AM","12 AM - 2 AM"], [35,40,25]),
-    "entry.744326918": weighted_choice(["Yes","No"], [65,35]),
-    "entry.1784191715": social_activity,
-    "entry.1192970950": weighted_choice(["Often","Sometimes","Rarely"], [50,35,15]),
-    "entry.927479717": screen_quality,
-    "entry.2035929357": days_unproductive,
-    "entry.38757470": social_activity,
-    "entry.1406815052": time_for_self,
-    "entry.1403062670": schedule_change,
-    "entry.881978082": exercise,
-    "entry.1026336142": productive_hours,
-    "entry.491147406": meals
+# --- Entry ID Mapping (Confirmed Working Structure) ---
+# Maps the column names used in the CSV to the Google Form Entry IDs
+ID_MAP = {
+    "age": "entry.130782805", 
+    "sleep_time": "entry.206918368", 
+    "avg_sleep_hours": "entry.1315476675", 
+    "wake_ups": "entry.882704943", 
+    "smartphone_hours": "entry.1934504077", 
+    "use_before_sleep": "entry.744326918",
+    "stress_level": "entry.1784191715", 
+    "caffeine_freq": "entry.1192970950",
+    "screen_time_post_8pm": "entry.927479717",
+    "exercise_days": "entry.2035929357",
+    "difficulty_asleep": "entry.38757470",
+    "time_to_sleep": "entry.1406815052",
+    "weekend_sleep": "entry.1403062670",
+    "fresh_after_waking": "entry.881978082",
+    "sleep_quality": "entry.1026336142",
+    "satisfaction": "entry.491147406"
 }
 
-# -------------------- SUBMIT --------------------
-response = requests.post(url, data=data)
-print(f"Form submitted! Status: {response.status_code} | Outlier: {outlier}")
+def generate_csv(num_records):
+    """Generates a CSV file with randomized, realistic data if it doesn't already exist."""
+    # This check prevents regeneration of 1000 rows on every GitHub Action run
+    if os.path.exists(CSV_FILENAME):
+        print(f"✅ CSV file '{CSV_FILENAME}' already exists. Skipping generation.")
+        return
+        
+    print(f"Generating {num_records} random records...")
+    
+    data = {}
+    
+    # Generate data for each field based on realistic weights
+    data['age'] = [random.randint(18, 35) for _ in range(num_records)]
+    data['sleep_time'] = random.choices(["Before 10 PM", "10 PM - 12 AM", "12 AM - 2AM", "After 2 AM"], weights=[15, 45, 30, 10], k=num_records)
+    data['avg_sleep_hours'] = random.choices([4, 5, 6, 7, 8, 9], weights=[5, 10, 20, 30, 25, 10], k=num_records)
+    data['wake_ups'] = random.choices([0, 1, 2, 3], weights=[30, 40, 20, 10], k=num_records)
+    data['smartphone_hours'] = random.choices([3, 4, 5, 6, 7, 8], weights=[10, 20, 30, 20, 10, 10], k=num_records)
+    data['use_before_sleep'] = random.choices(["Yes", "No"], weights=[75, 25], k=num_records)
+    data['stress_level'] = random.choices([1, 2, 3, 4, 5], weights=[5, 15, 35, 30, 15], k=num_records)
+    data['caffeine_freq'] = random.choices(["Never", "Rarely", "Often", "Daily"], weights=[10, 20, 30, 40], k=num_records)
+    data['screen_time_post_8pm'] = random.choices(["Less than 1 hour", "1-2 hours", "2-4 hours", "More than 4 hours"], weights=[10, 30, 40, 20], k=num_records)
+    data['exercise_days'] = random.choices(["0 days", "1-2 days", "3-4 days", "5+ days"], weights=[15, 30, 35, 20], k=num_records)
+    data['difficulty_asleep'] = random.choices(["Never", "Rarely", "Sometimes", "Frequently", "Always"], weights=[25, 35, 25, 10, 5], k=num_records)
+    data['time_to_sleep'] = random.choices(["Less than 10 minutes", "10-20 minutes", "20-40 minutes", "More than 40 minutes"], weights=[30, 40, 20, 10], k=num_records)
+    data['weekend_sleep'] = random.choices(["Yes, Sleep more", "Yes, Sleep less", "No, Same schedule"], weights=[50, 10, 40], k=num_records)
+    data['fresh_after_waking'] = random.choices(["Yes", "Sometimes", "No"], weights=[20, 60, 20], k=num_records)
+    data['sleep_quality'] = random.choices([1, 2, 3, 4, 5], weights=[5, 10, 30, 35, 20], k=num_records)
+    data['satisfaction'] = random.choices([1, 2, 3, 4, 5], weights=[5, 10, 25, 35, 25], k=num_records)
+
+    # Create DataFrame and save to CSV
+    df = pd.DataFrame(data)
+    df.to_csv(CSV_FILENAME, index=False)
+    print(f"✅ CSV file '{CSV_FILENAME}' created successfully with {num_records} records.")
+
+
+def submit_from_csv(start_index):
+    """Reads the CSV file and submits data row by row, starting from start_index."""
+    
+    if not os.path.exists(CSV_FILENAME):
+        print(f"❌ Error: CSV file '{CSV_FILENAME}' not found. Run generate_csv() first.")
+        return
+
+    df = pd.read_csv(CSV_FILENAME)
+    total_records = len(df)
+    
+    if start_index >= total_records:
+        print(f"🎉 Submission complete! Start index ({start_index}) exceeds total records ({total_records}).")
+        return
+
+    print(f"\n--- Starting submission from record #{start_index + 1} of {total_records} ---")
+    
+    for index in range(start_index, total_records):
+        row = df.iloc[index]
+        
+        # 1. Create the payload dictionary using the ID_MAP
+        payload = {}
+        for col_name, entry_id in ID_MAP.items():
+            # Ensure all values are converted to string for the request
+            payload[entry_id] = str(row[col_name])
+            
+        # 2. Submit the payload
+        try:
+            response = requests.post(URL, data=payload)
+            
+            # 3. Log the result
+            if response.status_code == 200:
+                print(f"✅ Record {index + 1}/{total_records} submitted successfully. Status: 200")
+            else:
+                print(f"❌ Record {index + 1}/{total_records} FAILED. Status: {response.status_code}. Pausing for a longer time.")
+                time.sleep(30) # Longer pause on failure
+                continue 
+
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Record {index + 1}/{total_records} FAILED due to connection error: {e}")
+            time.sleep(30)
+            continue
+
+        # 4. Wait for the defined interval
+        time.sleep(SUBMISSION_DELAY_SECONDS)
+        print(f"--- Paused for {SUBMISSION_DELAY_SECONDS} seconds ---")
+
+
+    print("\n--- Submission process complete for this batch. ---")
+
+# --- Main Execution ---
+if __name__ == "__main__":
+    # 0. Check for dependencies first (critical for GitHub Actions)
+    try:
+        import pandas as pd
+    except ImportError:
+        print("❌ Error: The 'pandas' library is required. Please install it with 'pip install pandas'")
+        sys.exit(1)
+
+    # 1. Get the starting index from command line arguments (default to 0)
+    try:
+        start_index = int(sys.argv[1]) if len(sys.argv) > 1 else 0
+    except ValueError:
+        print("Invalid starting index provided. Using default index 0.")
+        start_index = 0
+        
+    # 2. Ensure the CSV is generated (will only run if the file is missing)
+    # The number of records for generation is hardcoded to NUM_RECORDS
+    generate_csv(NUM_RECORDS)
+    
+    # 3. Submit the data starting from the specified index
+    submit_from_csv(start_index)
